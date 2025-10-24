@@ -7,11 +7,12 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $0 [-i IFACE] [-y] [-h]
+Usage: $0 [-i IFACE] [-y] [-v] [-h]
 
 Options:
   -i IFACE   Specify network interface to renew (auto-detected if omitted)
   -y         Assume yes; don't prompt (useful in scripts or to skip SSH warning)
+  -v         Verbose mode; show detailed progress information
   -h         Show this help
 
 Notes:
@@ -22,6 +23,13 @@ EOF
 }
 
 log() { printf '%s\n' "$*" >&2; }
+
+# Verbose logging function
+vlog() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        log "$@"
+    fi
+}
 
 # Print network device details
 print_device_details() {
@@ -56,12 +64,14 @@ detect_iface() {
 }
 
 ASSUME_YES=0
+VERBOSE=0
 INTERFACE=""
 
-while getopts ":i:yh" opt; do
+while getopts ":i:yvh" opt; do
   case "$opt" in
     i) INTERFACE="$OPTARG" ;;
     y) ASSUME_YES=1 ;;
+    v) VERBOSE=1 ;;
     h) usage; exit 0 ;;
     :) log "Missing argument for -$OPTARG"; usage; exit 2 ;;
     *) usage; exit 2 ;;
@@ -92,38 +102,44 @@ fi
 log "Renewing interface: $INTERFACE"
 
 # Print initial device details
-print_device_details "$INTERFACE"
+if [ "$VERBOSE" -eq 1 ]; then
+    vlog "Initial device details:"
+    print_device_details "$INTERFACE"
+fi
 
 try_nmcli() {
   if command -v nmcli >/dev/null 2>&1; then
-    log "Using NetworkManager (nmcli) to reconnect $INTERFACE"
-    sudo nmcli device disconnect "$INTERFACE" || true
-    sleep 1
-    if sudo nmcli device connect "$INTERFACE"; then
-      log "nmcli: reconnect succeeded"
-      log "Network renewal complete. Current device details:"
-      print_device_details "$INTERFACE"
-      return 0
+    vlog "Using NetworkManager (nmcli) to reconnect $INTERFACE"
+    if [ "$VERBOSE" -eq 1 ]; then
+      sudo nmcli device disconnect "$INTERFACE" || true
+      sleep 1
+      if sudo nmcli device connect "$INTERFACE"; then
+        vlog "nmcli: reconnect succeeded"
+        return 0
+      fi
     else
-      log "nmcli: reconnect failed"
-      return 1
+      sudo nmcli device disconnect "$INTERFACE" >/dev/null 2>&1 || true
+      sleep 1
+      if sudo nmcli device connect "$INTERFACE" >/dev/null 2>&1; then
+        return 0
+      fi
     fi
+    vlog "nmcli: reconnect failed"
+    return 1
   fi
   return 2
 }
 
 try_dhclient() {
   if command -v dhclient >/dev/null 2>&1; then
-    log "Using dhclient to release/renew DHCP on $INTERFACE"
+    vlog "Using dhclient to release/renew DHCP on $INTERFACE"
     sudo dhclient -r "$INTERFACE" || true
     sleep 1
-    if sudo dhclient "$INTERFACE"; then
-      log "dhclient: success"
-      log "Network renewal complete. Current device details:"
-      print_device_details "$INTERFACE"
+    if sudo dhclient "$INTERFACE" >/dev/null 2>&1; then
+      vlog "dhclient: success"
       return 0
     else
-      log "dhclient: failed"
+      vlog "dhclient: failed"
       return 1
     fi
   fi
@@ -132,16 +148,14 @@ try_dhclient() {
 
 try_dhcpcd() {
   if command -v dhcpcd >/dev/null 2>&1; then
-    log "Using dhcpcd to stop/start DHCP on $INTERFACE"
+    vlog "Using dhcpcd to stop/start DHCP on $INTERFACE"
     sudo dhcpcd -k "$INTERFACE" || true
     sleep 1
-    if sudo dhcpcd "$INTERFACE"; then
-      log "dhcpcd: success"
-      log "Network renewal complete. Current device details:"
-      print_device_details "$INTERFACE"
+    if sudo dhcpcd "$INTERFACE" >/dev/null 2>&1; then
+      vlog "dhcpcd: success"
       return 0
     else
-      log "dhcpcd: failed"
+      vlog "dhcpcd: failed"
       return 1
     fi
   fi
@@ -150,16 +164,14 @@ try_dhcpcd() {
 
 try_ifdown_ifup() {
   if command -v ifdown >/dev/null 2>&1 && command -v ifup >/dev/null 2>&1; then
-    log "Using ifdown/ifup on $INTERFACE"
-    sudo ifdown --force "$INTERFACE" || true
+    vlog "Using ifdown/ifup on $INTERFACE"
+    sudo ifdown --force "$INTERFACE" >/dev/null 2>&1 || true
     sleep 1
-    if sudo ifup "$INTERFACE"; then
-      log "ifdown/ifup: success"
-      log "Network renewal complete. Current device details:"
-      print_device_details "$INTERFACE"
+    if sudo ifup "$INTERFACE" >/dev/null 2>&1; then
+      vlog "ifdown/ifup: success"
       return 0
     else
-      log "ifdown/ifup: failed"
+      vlog "ifdown/ifup: failed"
       return 1
     fi
   fi
@@ -168,27 +180,47 @@ try_ifdown_ifup() {
 
 try_ip_link_down_up() {
   if command -v ip >/dev/null 2>&1; then
-    log "Falling back to 'ip link' down/up on $INTERFACE"
-    sudo ip link set dev "$INTERFACE" down
+    vlog "Falling back to 'ip link' down/up on $INTERFACE"
+    sudo ip link set dev "$INTERFACE" down >/dev/null 2>&1
     sleep 1
-    sudo ip link set dev "$INTERFACE" up
+    sudo ip link set dev "$INTERFACE" up >/dev/null 2>&1
     sleep 2
     # try to obtain DHCP lease if possible
     if command -v dhclient >/dev/null 2>&1; then
-      sudo dhclient "$INTERFACE" || true
+      sudo dhclient "$INTERFACE" >/dev/null 2>&1 || true
     fi
-    log "ip link down/up attempted"
+    vlog "ip link down/up attempted"
     return 0
   fi
   return 2
 }
 
 # Try methods in order; return success if any of them succeed (exit code 0)
-if try_nmcli; then exit 0; fi
-if try_dhclient; then exit 0; fi
-if try_dhcpcd; then exit 0; fi
-if try_ifdown_ifup; then exit 0; fi
-if try_ip_link_down_up; then exit 0; fi
+if try_nmcli; then
+    log "Network renewal complete."
+    print_device_details "$INTERFACE"
+    exit 0
+fi
+if try_dhclient; then
+    log "Network renewal complete."
+    print_device_details "$INTERFACE"
+    exit 0
+fi
+if try_dhcpcd; then
+    log "Network renewal complete."
+    print_device_details "$INTERFACE"
+    exit 0
+fi
+if try_ifdown_ifup; then
+    log "Network renewal complete."
+    print_device_details "$INTERFACE"
+    exit 0
+fi
+if try_ip_link_down_up; then
+    log "Network renewal complete."
+    print_device_details "$INTERFACE"
+    exit 0
+fi
 
 log "All methods tried and none reported success. Check the system's network manager and DHCP client."
 exit 1

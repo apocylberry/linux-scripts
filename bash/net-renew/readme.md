@@ -30,6 +30,11 @@ Examples:
   # Run non-interactively (don't prompt even if you're on SSH)
   `sudo ./net-renew.sh -y`
 
+  # Show detailed progress information
+  `sudo ./net-renew.sh -v`
+
+By default, the script shows minimal output (interface name, completion status, and final IP addresses). Use `-v` for verbose mode to see detailed progress information.
+
 Notes and caveats
 - Set the executable flag using `chmod +x net-renew.sh`
 - This will likely interrupt network connectivity briefly. Use caution if you're connected via SSH.
