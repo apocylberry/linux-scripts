@@ -22,13 +22,13 @@ Run with sudo or a user with passwordless sudo configured for networking command
 Examples:
 
   # Auto-detect interface and renew
-  sudo ./renew-net.sh
+  `sudo ./renew-net.sh`
 
   # Specify interface
-  sudo ./renew-net.sh -i eth0
+  `sudo ./renew-net.sh -i eth0`
 
   # Run non-interactively (don't prompt even if you're on SSH)
-  sudo ./renew-net.sh -y
+  `sudo ./renew-net.sh -y`
 
 Notes and caveats
 - This will likely interrupt network connectivity briefly. Use caution if you're connected via SSH.
