@@ -31,6 +31,7 @@ Examples:
   `sudo ./net-renew.sh -y`
 
 Notes and caveats
+- Set the executable flag using `chmod +x net-renew.sh`
 - This will likely interrupt network connectivity briefly. Use caution if you're connected via SSH.
 - The script uses available system tools; if your distribution uses a different network manager, adapt accordingly.
 - Tested with common Debian/Ubuntu and systemd-based systems.
