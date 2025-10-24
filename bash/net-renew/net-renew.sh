@@ -23,6 +23,14 @@ EOF
 
 log() { printf '%s\n' "$*" >&2; }
 
+# Print network device details
+print_device_details() {
+  local iface="$1"
+  log "Network device details for $iface:"
+  printf "    IPv4 Address: %s\n" "$(ip -4 addr show dev "$iface" | grep -w inet | awk '{print $2}')"
+  printf "    IPv6 Address: %s\n" "$(ip -6 addr show dev "$iface" | grep -w inet6 | awk '{print $2}')"
+}
+
 # detect default interface using 'ip'
 detect_iface() {
   local iface=""
@@ -83,6 +91,9 @@ fi
 
 log "Renewing interface: $INTERFACE"
 
+# Print initial device details
+print_device_details "$INTERFACE"
+
 try_nmcli() {
   if command -v nmcli >/dev/null 2>&1; then
     log "Using NetworkManager (nmcli) to reconnect $INTERFACE"
@@ -90,6 +101,8 @@ try_nmcli() {
     sleep 1
     if sudo nmcli device connect "$INTERFACE"; then
       log "nmcli: reconnect succeeded"
+      log "Network renewal complete. Current device details:"
+      print_device_details "$INTERFACE"
       return 0
     else
       log "nmcli: reconnect failed"
@@ -106,6 +119,8 @@ try_dhclient() {
     sleep 1
     if sudo dhclient "$INTERFACE"; then
       log "dhclient: success"
+      log "Network renewal complete. Current device details:"
+      print_device_details "$INTERFACE"
       return 0
     else
       log "dhclient: failed"
@@ -122,6 +137,8 @@ try_dhcpcd() {
     sleep 1
     if sudo dhcpcd "$INTERFACE"; then
       log "dhcpcd: success"
+      log "Network renewal complete. Current device details:"
+      print_device_details "$INTERFACE"
       return 0
     else
       log "dhcpcd: failed"
@@ -138,6 +155,8 @@ try_ifdown_ifup() {
     sleep 1
     if sudo ifup "$INTERFACE"; then
       log "ifdown/ifup: success"
+      log "Network renewal complete. Current device details:"
+      print_device_details "$INTERFACE"
       return 0
     else
       log "ifdown/ifup: failed"
